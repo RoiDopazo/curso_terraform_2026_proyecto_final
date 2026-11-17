@@ -1,0 +1,28 @@
+# CI · Formato, validación, TFLint y Trivy en cada push y pull request.
+# No necesita ninguna credencial: no se conecta a AWS.
+name: CI
+
+# Completa: debe ejecutarse en cada push y en cada pull request
+on:
+  ___:
+  ___:
+
+permissions:
+  contents: read
+
+jobs:
+  comprobaciones:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Comprobaciones de calidad y seguridad
+        run: ___ # el script de CI del proyecto
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # para que TFLint descargue su plugin sin límites

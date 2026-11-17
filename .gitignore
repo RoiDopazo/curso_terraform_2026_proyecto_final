@@ -1,0 +1,13 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+terraform.tfvars
+*.auto.tfvars
+*.tfplan
+
+# Entrega
+entrega.zip
+
+# .terraform.lock.hcl SÍ se versiona: fija las versiones de los providers

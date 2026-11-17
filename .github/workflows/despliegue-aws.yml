@@ -1,0 +1,56 @@
+# MEJORA OPCIONAL · Despliegue en una cuenta real de AWS, a mano y por entorno.
+# Requisitos (ver extras/oidc/README.md):
+#   - Un rol de AWS que GitHub pueda asumir con OIDC: variable del repositorio AWS_ROLE_ARN
+#   - El bucket del estado creado: variable del repositorio BUCKET_ESTADO
+#   - Tu prefijo: variable del repositorio PREFIJO
+name: Despliegue en AWS (opcional)
+
+on:
+  workflow_dispatch:
+    inputs:
+      entorno:
+        description: Entorno que se despliega
+        type: choice
+        options: [dev, pro]
+      accion:
+        description: Solo plan, o plan y apply
+        type: choice
+        options: [plan, apply]
+
+permissions:
+  contents: read
+  id-token: write # necesario para OIDC
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.entorno }} # con reglas de aprobación en la configuración del repositorio
+    defaults:
+      run:
+        working-directory: envs/${{ inputs.entorno }}
+    env:
+      TF_VAR_prefijo: ${{ vars.PREFIJO }}
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Credenciales temporales de AWS con OIDC (sin claves guardadas)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform init -input=false -backend-config=../../backend-aws.hcl -backend-config="bucket=${{ vars.BUCKET_ESTADO }}"
+
+      - name: terraform plan
+        run: terraform plan -input=false -out=plan.tfplan
+
+      - name: terraform apply (solo si se ha elegido apply)
+        if: inputs.accion == 'apply'
+        run: terraform apply -input=false plan.tfplan

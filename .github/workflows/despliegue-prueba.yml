@@ -1,0 +1,45 @@
+# CD · Despliegue de prueba en un Floci efímero dentro del propio pipeline.
+# Despliega el entorno dev, comprueba los recursos y lo destruye todo.
+# No necesita ninguna credencial de AWS.
+name: Despliegue de prueba
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Arrancar Floci
+        run: |
+          # Conviene fijar una versión concreta de la imagen en lugar de latest-compat
+          docker run -d --name floci -p 4566:4566 \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            floci/floci:latest-compat
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:4566/_floci/health && break
+            sleep 2
+          done
+
+      - name: Desplegar, comprobar y destruir el entorno dev
+        run: ./scripts/despliegue-prueba.sh
+        env:
+          PREFIJO: ci
+          ENTORNO: dev
+
+      - name: Registro de Floci (si algo falla)
+        if: failure()
+        run: docker logs floci | tail -100
