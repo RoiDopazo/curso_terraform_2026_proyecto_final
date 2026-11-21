@@ -2,22 +2,40 @@
 # CD · Despliegue de prueba en un entorno efímero de Floci.
 # Crea el bucket del estado, despliega el entorno dev, comprueba los recursos
 # y lo destruye todo al terminar (también si algo falla).
-# Necesita Terraform, la AWS CLI y Floci escuchando en FLOCI_ENDPOINT.
+# Necesita Terraform, la AWS CLI y Floci escuchando en http://localhost:4566
+# (esa dirección está fija en providers.tf y en backend-floci.hcl).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TF="${TF:-terraform}"
 ENTORNO="${ENTORNO:-dev}"
-ENDPOINT="${FLOCI_ENDPOINT:-http://localhost:4566}"
+ENDPOINT="http://localhost:4566"   # fija: la usan también providers.tf y backend-floci.hcl
 
 export TF_VAR_usar_floci=true
 export TF_VAR_prefijo="${PREFIJO:-ci}"
 export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=eu-west-1
+unset AWS_PROFILE AWS_SESSION_TOKEN
 aws_floci() { aws --endpoint-url "$ENDPOINT" "$@"; }
 paso() { echo; echo "==> $1"; }
 
+# Se trabaja sobre una copia limpia del proyecto para no tocar lo local:
+# - terraform.tfvars tiene prioridad sobre TF_VAR_* (pondría usar_floci = false)
+# - el estado local de bootstrap/ y los .terraform/ pueden apuntar a AWS real
+# (tar en lugar de rsync: Git Bash en Windows no trae rsync)
+TRABAJO="$(mktemp -d)"
+tar -cf - --exclude .git --exclude .terraform --exclude 'terraform.tfvars' \
+  --exclude '*.auto.tfvars' --exclude '*.tfstate' --exclude '*.tfstate.*' . \
+  | tar -xf - -C "$TRABAJO"
+trap 'rm -rf "$TRABAJO"' EXIT
+cd "$TRABAJO"
+
 paso "1/6 Comprobar que Floci responde en $ENDPOINT"
-curl -sf "$ENDPOINT/_floci/health" >/dev/null || { echo "Floci no responde"; exit 1; }
+if ! curl -sf "$ENDPOINT/_floci/health" >/dev/null; then
+  echo "Floci no responde en $ENDPOINT."
+  echo "Este script solo despliega en Floci: arráncalo en local o usa el workflow"
+  echo "'Despliegue de prueba' de GitHub Actions, que levanta su propio Floci."
+  exit 1
+fi
 
 paso "2/6 Elegir una AMI de Floci"
 if [ -z "${TF_VAR_ami_id:-}" ]; then
@@ -33,6 +51,7 @@ limpiar() {
   paso "6/6 Limpieza: destruir el entorno y el bucket del estado"
   "$TF" -chdir="envs/$ENTORNO" destroy -auto-approve -input=false || true
   "$TF" -chdir=bootstrap destroy -auto-approve -input=false || true
+  rm -rf "$TRABAJO"
 }
 trap limpiar EXIT
 
@@ -51,7 +70,7 @@ paso "5/6 Comprobar los recursos creados"
 echo "--- Instancias del entorno"
 # shellcheck disable=SC2016 # las comillas invertidas son de JMESPath, no del shell
 aws_floci ec2 describe-instances \
-  --filters "Name=tag:Entorno,Values=${ENTORNO^^}" \
+  --filters "Name=tag:Entorno,Values=$(echo "$ENTORNO" | tr '[:lower:]' '[:upper:]')" \
   --query 'Reservations[].Instances[].[InstanceId,State.Name,Tags[?Key==`Name`]|[0].Value]' \
   --output table
 echo "--- Estado guardado en el bucket"

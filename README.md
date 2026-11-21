@@ -33,6 +33,8 @@ Plantilla del proyecto final. Partes de la red y los servidores de los módulos 
 
 Requisitos: Terraform 1.11 o posterior, la AWS CLI y Docker (o TFLint y Trivy instalados).
 
+> **Floci tiene que escuchar en `http://localhost:4566`.** Esa dirección está fija en los `providers.tf` y en `backend-floci.hcl`; si lo arrancas en otro puerto, Terraform no lo encontrará. Por ejemplo: `docker run -d --name floci -p 4566:4566 -v /var/run/docker.sock:/var/run/docker.sock floci/floci:latest-compat`
+
 ## Desplegar en local
 
 ```bash
@@ -61,8 +63,10 @@ Sin GitHub, los mismos scripts se ejecutan en local:
 
 ```bash
 ./scripts/ci.sh
-./scripts/despliegue-prueba.sh      # con Floci arrancado
+./scripts/despliegue-prueba.sh      # con Floci arrancado en localhost:4566
 ```
+
+`despliegue-prueba.sh` solo despliega en Floci, nunca en AWS, y trabaja sobre una copia temporal del proyecto: no usa tus `terraform.tfvars`, tu estado ni tus `.terraform/`. Si no tienes Floci en local, usa el workflow `Despliegue de prueba` de GitHub Actions, que levanta su propio Floci.
 
 ## Entrega
 
