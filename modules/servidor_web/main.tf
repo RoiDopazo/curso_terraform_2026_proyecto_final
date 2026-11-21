@@ -38,7 +38,7 @@ resource "aws_vpc_security_group_ingress_rule" "entrada" {
 
 resource "aws_vpc_security_group_egress_rule" "todo" {
   security_group_id = aws_security_group.web.id
-  description       = "Salida a Internet (actualizaciones e instalación de paquetes)"
+  description       = "Salida a Internet (actualizaciones e instalacion de paquetes)"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
