@@ -32,3 +32,26 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
     }
   }
 }
+
+# Excepción justificada (AWS-0132): el bucket de logs se cifra con AES256 (SSE-S3,
+# claves gestionadas por AWS). Una clave KMS propia añade coste y gestión
+# que no compensan en este proyecto.
+#trivy:ignore:AWS-0132
+resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}

@@ -13,6 +13,10 @@ resource "aws_s3_bucket_versioning" "estado" {
   }
 }
 
+# Excepción justificada (AWS-0132): el bucket del estado se cifra con AES256 (SSE-S3,
+# claves gestionadas por AWS). Una clave KMS propia añade coste y gestión
+# que no compensan en este proyecto.
+#trivy:ignore:AWS-0132
 resource "aws_s3_bucket_server_side_encryption_configuration" "estado" {
   bucket = aws_s3_bucket.estado.id
 
