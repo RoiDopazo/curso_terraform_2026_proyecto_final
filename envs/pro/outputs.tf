@@ -4,3 +4,7 @@ output "urls" {
 }
 
 # Añade un output "bucket_logs" con el output bucket del módulo logs
+output "bucket_logs" {
+  description = "Bucket de logs de producción"
+  value       = module.logs.bucket
+}
