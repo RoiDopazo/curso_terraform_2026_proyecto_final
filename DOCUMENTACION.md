@@ -28,11 +28,17 @@ Bucles:
 - `for_each` sobre el mapa `local.servidores` en `envs/pro/main.tf`, para crear un servidor por cada elemento (`module.web["a"]` y `module.web["b"]`). Cada servidor toma su nombre de la clave (`each.key`) y su mensaje de `each.value.mensaje`.
 
 ## 3. Decisiones de seguridad
-TODO: 
 
 | Medida | Dónde | Por qué |
 | --- | --- | --- |
-| ___ | ___ | ___ |
+| IMDSv2 obligatorio (`http_tokens = "required"`) · Trivy AWS-0028 | `modules/servidor_web` | Evita que alguien pueda sacar las credenciales de la instancia desde el servicio de metadatos con un ataque tipo SSRF |
+| Disco raíz cifrado · Trivy AWS-0131 | `modules/servidor_web` | Los datos del disco y de sus copias quedan protegidos |
+| Bucket de logs cifrado (AES256) | `modules/logs` | Los logs pueden tener información sensible |
+| Bloqueo del acceso público al bucket de logs · Trivy AWS-0086, 0087, 0091 y 0093 | `modules/logs` | Los logs nunca deben poder leerse desde fuera, aunque alguien se equivoque con una política o una ACL |
+| Bucket del estado cifrado, versionado y privado | `bootstrap` | El estado guarda datos sensibles de la infraestructura; con el versionado se puede recuperar una versión anterior si se estropea |
+| Bloqueo del estado (`use_lockfile = true`) | `backend-floci.hcl` | Impide que dos `apply` modifiquen el mismo estado a la vez |
+| Caducidad de los logs a los 30 días | `modules/logs` | No se guardan datos más tiempo del necesario |
+| Sin credenciales en el código | `.gitignore` | `terraform.tfvars`, el estado y `.terraform/` no se suben al repositorio |
 
 ### Hallazgos de Trivy aceptados
 
@@ -46,16 +52,46 @@ Cada excepción (`#trivy:ignore:...`) debe estar justificada aquí y en un comen
 | AWS-0132 | HIGH | `modules/logs`: el bucket de logs se cifra con AES256 (claves de AWS) en vez de con una clave KMS propia, por el mismo motivo |
 
 ## 4. CI/CD
-TODO:
 
-Explica qué hace cada workflow y cuándo se ejecuta. Si no has usado GitHub, indica que has ejecutado los scripts en local.
+He hecho un fork de la plantilla en GitHub, así que los workflows se ejecutan en GitHub Actions:
+
+- **`ci.yml`**: se ejecuta en cada push y en cada pull request. Lanza `scripts/ci.sh`, que comprueba el formato (`terraform fmt`), valida cada configuración (`terraform validate`), pasa TFLint y Trivy. Si Trivy encuentra algún hallazgo HIGH o CRITICAL, el CI falla. No necesita credenciales porque no se conecta a AWS.
+- **`despliegue-prueba.yml`**: se ejecuta con cada push a `main` o a mano desde la pestaña Actions. Arranca un Floci dentro del propio pipeline y ejecuta `scripts/despliegue-prueba.sh`: crea el bucket del estado, despliega dev con el estado en S3, comprueba las instancias y el estado, y al final lo destruye todo, aunque algo falle.
+- **`despliegue-aws.yml`**: es opcional y no lo he usado, porque trabajo con Floci.
+
+Antes de hacer push, también he ejecutado `./scripts/ci.sh` en local para comprobar que todo pasaba.
 
 ## 5. Cómo desplegar
-TODO: 
 
-Pasos para desplegar y destruir tu proyecto.
+**1. Crear el bucket del estado** (con estado local):
+
+```bash
+cd bootstrap
+cp ../envs/dev/terraform.tfvars.example terraform.tfvars   # indicar usar_floci = true
+terraform init
+terraform apply
+terraform output bucket_estado
+```
+
+**2. Desplegar dev**:
+
+```bash
+cd envs/dev
+cp terraform.tfvars.example terraform.tfvars   # indicar usar_floci = true
+terraform init -backend-config=../../backend-floci.hcl -backend-config="bucket=<bucket_estado>"
+terraform apply
+```
+
+`<bucket_estado>` es el nombre del bucket que devuelve `terraform output bucket_estado` en `bootstrap/`.
+
+**3. Desplegar pro**: los mismos pasos que para dev pero realizandolos en la carpeta `envs/pro`.
+
+**Destruir**, en orden inverso: primero `envs/pro`, después `envs/dev` y por último `bootstrap`, con `terraform destroy` en cada carpeta. Bootstrap va el último porque su bucket guarda el estado de los otros dos.
 
 ## 6. Mejoras posibles
-TODO: 
 
-¿Qué cambiarías con más tiempo?
+- Poner un balanceador en las subredes públicas y llevar los servidores a subredes privadas. Así los servidores no tendrían IP pública y se resolvería AWS-0164.
+- Usar una clave KMS propia para cifrar los buckets, con rotación y control de acceso (AWS-0132).
+- Activar VPC Flow Logs y enviarlos al bucket de logs (AWS-0178), y activar también los logs de acceso a S3 (AWS-0089).
+- Servir la web por HTTPS y limitar desde qué IPs se puede entrar.
+- Fijar una versión concreta de la imagen de Floci en el pipeline, en lugar de `latest-compat`.
